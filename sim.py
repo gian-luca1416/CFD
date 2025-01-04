@@ -91,7 +91,7 @@ def solve_momentum(u, v, element_length):
 
     return u_temp, v_temp
 
-def solve_pressure(u_temp, v_temp, p, element_length): # TODO: clean
+def solve_pressure(u_temp, v_temp, p, element_length): 
     du_temp_dx = differentiate_x(u_temp, element_length)
     dv_temp_dy = differentiate_y(v_temp, element_length)
     

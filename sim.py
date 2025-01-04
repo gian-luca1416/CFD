@@ -2,20 +2,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
+# This code is inspired by https://github.com/Ceyron/lid-driven-cavity-python/tree/main
+
 # Meta information
-GRID_SIZE = 41 #41
+GRID_SIZE = 41 
 DOMAIN_SIZE = 1.0
 ITERATIONS = 500
 DELTA_T = 0.001
-KINEMATIC_VISCOSITY = 0.1 #TODO this will be 0.01
+PRESSURE_POISSON_ITERATIONS = 50
+STABILITY_SAFETY_FACTOR = 0.5
+
+# Information
+KINEMATIC_VISCOSITY = 0.01 
 DENSITY = 1.0
 
 # Boundary conditions
 U_TOP = 1.0
-
-# Other
-PRESSURE_POISSON_ITERATIONS = 50
-STABILITY_SAFETY_FACTOR = 0.5
 
 def create_grid():
     x = np.linspace(0.0, DOMAIN_SIZE, GRID_SIZE)
@@ -24,57 +26,62 @@ def create_grid():
     X, Y = np.meshgrid(x, y)
     return X, Y
 
-def central_difference_x(f, element_length):
+def differentiate_x(f, element_length):
     diff = np.zeros_like(f)
-    diff[1:-1, 1:-1] = (
-        f[1:-1, 2:  ]
-        -
-        f[1:-1, 0:-2]
-    ) / (
-        2 * element_length
-    )
+
+    # Loop over rows
+    for i in range(1, f.shape[0] - 1):
+        # Loop over cols
+        for j in range(1, f.shape[1] - 1):
+            # Differentiate i, j field numerically with respect to x
+            # (value right - value left) / (2 * element_length)
+            diff[i, j] = (f[i, j+1] - f[i, j-1]) / (2 * element_length)
+
     return diff
     
-def central_difference_y(f, element_length):
+def differentiate_y(f, element_length):
     diff = np.zeros_like(f)
-    diff[1:-1, 1:-1] = (
-        f[2:  , 1:-1]
-        -
-        f[0:-2, 1:-1]
-    ) / (
-        2 * element_length
-    )
+
+    # Loop over rows
+    for i in range(1, f.shape[0] - 1):
+        # Loop over cols
+        for j in range(1, f.shape[1] - 1):
+            # Differentiate i, j field numerically with respect to y
+            # (value below - value above) / (2 * element_length)
+            diff[i, j] = (
+                f[i + 1, j] - f[i - 1, j]
+            ) / (2 * element_length)
+
     return diff
 
 def laplace(f, element_length):
     diff = np.zeros_like(f)
-    diff[1:-1, 1:-1] = (
-        f[1:-1, 0:-2]
-        +
-        f[0:-2, 1:-1]
-        -
-        4
-        *
-        f[1:-1, 1:-1]
-        +
-        f[1:-1, 2:  ]
-        +
-        f[2:  , 1:-1]
-    ) / (
-        element_length**2
-    )
+
+    # Loop over rows
+    for i in range(1, f.shape[0] - 1):
+        # Loop over cols
+        for j in range(1, f.shape[1] - 1):
+            diff[i, j] = (
+                f[i, j - 1]   # left
+                + f[i - 1, j] # up
+                - 4 * f[i, j] # center
+                + f[i, j + 1] # right
+                + f[i + 1, j] # down
+            ) / (element_length**2)
+
     return diff
 
 def ensure_stability(element_length):
+    # From https://github.com/Ceyron/lid-driven-cavity-python/tree/main
     maximum_possible_time_step_length = (0.5 * element_length**2 / KINEMATIC_VISCOSITY)
     if DELTA_T > (STABILITY_SAFETY_FACTOR * maximum_possible_time_step_length):
         raise RuntimeError("Stability is not guarenteed.")
 
 def solve_momentum(u, v, element_length):
-    du_dx = central_difference_x(u, element_length) 
-    du_dy = central_difference_y(u, element_length)
-    dv_dx = central_difference_x(v, element_length)
-    dv_dy = central_difference_y(v, element_length)
+    du_dx = differentiate_x(u, element_length) 
+    du_dy = differentiate_y(u, element_length)
+    dv_dx = differentiate_x(v, element_length)
+    dv_dy = differentiate_y(v, element_length)
     laplace_u = laplace(u, element_length)
     laplace_v = laplace(v, element_length)
     
@@ -84,45 +91,55 @@ def solve_momentum(u, v, element_length):
 
     return u_temp, v_temp
 
-def solve_pressure(u_temp, v_temp, p, element_length):
-    du_temp_dx = central_difference_x(u_temp, element_length)
-    dv_temp_dy = central_difference_y(v_temp, element_length)
+def solve_pressure(u_temp, v_temp, p, element_length): # TODO: clean
+    du_temp_dx = differentiate_x(u_temp, element_length)
+    dv_temp_dy = differentiate_y(v_temp, element_length)
     
-    # Compute a pressure correction by solving the pressure-poisson equation
+    # Calculate the right hand side of \nabla^2 p=\frac{\rho}{\Delta t} \cdot \nabla u
+    # Nabla times u is a scalar field
     rhs = (DENSITY / DELTA_T * (du_temp_dx + dv_temp_dy))
     
+    # Calculate preassure by iterating
     for _ in range(PRESSURE_POISSON_ITERATIONS):
         p_next = np.zeros_like(p)
-        p_next[1:-1, 1:-1] = 1/4 * (
-            +
-            p[1:-1, 0:-2]
-            +
-            p[0:-2, 1:-1]
-            +
-            p[1:-1, 2:  ]
-            +
-            p[2:  , 1:-1]
-            -
-            element_length**2
-            *
-            rhs[1:-1, 1:-1]
-        )
+
+        # Loop over rows
+        for i in range(1, p.shape[0] - 1):
+            # Loop over cols
+            for j in range(1, p.shape[1] - 1):
+                p_next[i, j] = 0.25 * (
+                    p[i, j - 1]     # left
+                    + p[i - 1, j]   # up
+                    + p[i, j + 1]   # right
+                    + p[i + 1, j]   # down
+                    - (element_length**2) * rhs[i, j]) 
     
-        # Pressure Boundary Conditions: Homogeneous Neumann Boundary
-        # Conditions everywhere except for the top, where it is a
-        # homogeneous Dirichlet BC
-        p_next[:, -1] = p_next[:, -2]
-        p_next[0,  :] = p_next[1,  :]
-        p_next[:,  0] = p_next[:,  1]
-        p_next[-1, :] = 0.0
+        # Pressure Boundary Conditions
+        p_next[:, -1] = p_next[:, -2]  # right: Neumann
+        p_next[0,  :] = p_next[1,  :]  # top: Neumann
+        p_next[:,  0] = p_next[:,  1]  # left: Neumann
+        p_next[-1, :] = 0.0            # bottom: Dirichlet (y is inverted)
     
-        p_prev = p_next
+        p = p_next
     
-    dp_next_dx = central_difference_x(p_next, element_length)
-    dp_next_dy = central_difference_y(p_next, element_length)
+    dp_next_dx = differentiate_x(p_next, element_length)
+    dp_next_dy = differentiate_y(p_next, element_length)
     return dp_next_dx, dp_next_dy, p_next
 
+def enforce_boundary_conditions(u, v):
+    u[0, :] = 0.0
+    u[:, 0] = 0.0
+    u[:, -1] = 0.0
+    u[-1, :] = U_TOP # y is inverted
+    v[0, :] = 0.0
+    v[:, 0] = 0.0
+    v[:, -1] = 0.0
+    v[-1, :] = 0.0
+
+    return u, v
+
 def visualization(X, Y, p_next, u_next, v_next):
+    # From https://github.com/Ceyron/lid-driven-cavity-python/tree/main
     # The [::2, ::2] selects only every second entry (less cluttering plot)
     plt.style.use("dark_background")
     plt.figure()
@@ -130,7 +147,7 @@ def visualization(X, Y, p_next, u_next, v_next):
     plt.colorbar()
 
     plt.quiver(X[::2, ::2], Y[::2, ::2], u_next[::2, ::2], v_next[::2, ::2], color="black")
-    # plt.streamplot(X[::2, ::2], Y[::2, ::2], u_next[::2, ::2], v_next[::2, ::2], color="black")
+    #plt.streamplot(X[::2, ::2], Y[::2, ::2], u_next[::2, ::2], v_next[::2, ::2], color="black")
     plt.xlim((0, 1))
     plt.ylim((0, 1))
     plt.show()
@@ -159,35 +176,20 @@ def main():
         u_temp, v_temp = solve_momentum(u, v, element_length)
 
         # Velocity boundary conditions
-        u_temp[0, :] = 0.0
-        u_temp[:, 0] = 0.0
-        u_temp[:, -1] = 0.0
-        u_temp[-1, :] = U_TOP
-        v_temp[0, :] = 0.0
-        v_temp[:, 0] = 0.0
-        v_temp[:, -1] = 0.0
-        v_temp[-1, :] = 0.0
+        u_temp, v_temp = enforce_boundary_conditions(u_temp, v_temp)
 
+        # Get next p, next dp/dx and next dp/dy
         dp_next_dx, dp_next_dy, p_next = solve_pressure(u_temp, v_temp, p, element_length)
 
-        # Correct the velocities such that the fluid stays incompressible
+        # Correct the velocities
         u_next = (u_temp - DELTA_T / DENSITY * dp_next_dx)
         v_next = (v_temp - DELTA_T / DENSITY * dp_next_dy)
 
         # Velocity boundary conditions
-        u_next[0, :] = 0.0
-        u_next[:, 0] = 0.0
-        u_next[:, -1] = 0.0
-        u_next[-1, :] = U_TOP
-        v_next[0, :] = 0.0
-        v_next[:, 0] = 0.0
-        v_next[:, -1] = 0.0
-        v_next[-1, :] = 0.0
+        u_next, v_next = enforce_boundary_conditions(u_next, v_next)
 
-        # Advance in time
-        u = u_next
-        v = v_next
-        p = p_next
+        # Prepare next step
+        u, v, p = u_next, v_next, p_next
 
     # Visualize
     visualization(X, Y, p_next, u_next, v_next)

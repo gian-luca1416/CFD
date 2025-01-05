@@ -7,13 +7,13 @@ from tqdm import tqdm
 # Meta information
 GRID_SIZE = 41 
 DOMAIN_SIZE = 1.0
-ITERATIONS = 500
+ITERATIONS = 1000
 DELTA_T = 0.001
 PRESSURE_POISSON_ITERATIONS = 50
 STABILITY_SAFETY_FACTOR = 0.5
 
 # Information
-KINEMATIC_VISCOSITY = 0.01 
+KINEMATIC_VISCOSITY = 0.1
 DENSITY = 1.0
 
 # Boundary conditions
@@ -26,45 +26,45 @@ def create_grid():
     X, Y = np.meshgrid(x, y)
     return X, Y
 
-def differentiate_x(f, element_length):
-    diff = np.zeros_like(f)
+def differentiate_x(values, element_length):
+    result = np.zeros_like(values)
     # Loop over rows
-    for i in range(1, f.shape[0] - 1):
+    for i in range(1, values.shape[0] - 1):
         # Loop over cols
-        for j in range(1, f.shape[1] - 1):
+        for j in range(1, values.shape[1] - 1):
             # Differentiate i, j field numerically with respect to x
             # (value right - value left) / (2 * element_length)
-            diff[i, j] = (f[i, j+1] - f[i, j-1]) / (2 * element_length)
+            result[i, j] = (values[i, j+1] - values[i, j-1]) / (2 * element_length)
     
-    return diff
+    return result
     
-def differentiate_y(f, element_length):
-    diff = np.zeros_like(f)
+def differentiate_y(values, element_length):
+    result = np.zeros_like(values)
     # Loop over rows
-    for i in range(1, f.shape[0] - 1):
+    for i in range(1, values.shape[0] - 1):
         # Loop over cols
-        for j in range(1, f.shape[1] - 1):
+        for j in range(1, values.shape[1] - 1):
             # Differentiate i, j field numerically with respect to y
             # (value below - value above) / (2 * element_length)
-            diff[i, j] = (f[i+1, j] - f[i-1, j]) / (2 * element_length)
+            result[i, j] = (values[i+1, j] - values[i-1, j]) / (2 * element_length)
 
-    return diff
+    return result
 
-def laplace(f, element_length):
-    diff = np.zeros_like(f)
+def laplace(values, element_length):
+    result = np.zeros_like(values)
     # Loop over rows
-    for i in range(1, f.shape[0] - 1):
+    for i in range(1, values.shape[0] - 1):
         # Loop over cols
-        for j in range(1, f.shape[1] - 1):
-            diff[i, j] = (
-                f[i, j - 1]   # left
-                + f[i - 1, j] # up
-                - 4 * f[i, j] # center
-                + f[i, j + 1] # right
-                + f[i + 1, j] # down
+        for j in range(1, values.shape[1] - 1):
+            result[i, j] = (
+                values[i, j - 1]   # left
+                + values[i - 1, j] # up
+                - 4 * values[i, j] # center
+                + values[i, j + 1] # right
+                + values[i + 1, j] # down
             ) / (element_length**2)
 
-    return diff
+    return result
 
 def ensure_stability(element_length):
     # From https://github.com/Ceyron/lid-driven-cavity-python/tree/main
@@ -80,7 +80,7 @@ def solve_momentum(u, v, element_length):
     laplace_u = laplace(u, element_length)
     laplace_v = laplace(v, element_length)
     
-    # Calculate temporary u_{i+1} and v_{i+1}
+    # Calculate temporary u_{t+1} and v_{t+1}
     u_temp = (u + DELTA_T * (-(u * du_dx + v * du_dy) + KINEMATIC_VISCOSITY * laplace_u))
     v_temp = (v + DELTA_T * (-(u * dv_dx + v * dv_dy) + KINEMATIC_VISCOSITY * laplace_v))
 

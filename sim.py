@@ -28,7 +28,6 @@ def create_grid():
 
 def differentiate_x(f, element_length):
     diff = np.zeros_like(f)
-
     # Loop over rows
     for i in range(1, f.shape[0] - 1):
         # Loop over cols
@@ -36,27 +35,23 @@ def differentiate_x(f, element_length):
             # Differentiate i, j field numerically with respect to x
             # (value right - value left) / (2 * element_length)
             diff[i, j] = (f[i, j+1] - f[i, j-1]) / (2 * element_length)
-
+    
     return diff
     
 def differentiate_y(f, element_length):
     diff = np.zeros_like(f)
-
     # Loop over rows
     for i in range(1, f.shape[0] - 1):
         # Loop over cols
         for j in range(1, f.shape[1] - 1):
             # Differentiate i, j field numerically with respect to y
             # (value below - value above) / (2 * element_length)
-            diff[i, j] = (
-                f[i + 1, j] - f[i - 1, j]
-            ) / (2 * element_length)
+            diff[i, j] = (f[i+1, j] - f[i-1, j]) / (2 * element_length)
 
     return diff
 
 def laplace(f, element_length):
     diff = np.zeros_like(f)
-
     # Loop over rows
     for i in range(1, f.shape[0] - 1):
         # Loop over cols

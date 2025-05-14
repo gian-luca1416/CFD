@@ -5,9 +5,9 @@ from tqdm import tqdm
 # This code is inspired by https://github.com/Ceyron/lid-driven-cavity-python/tree/main
 
 # Meta information
-GRID_SIZE = 41 
+GRID_SIZE = 128 
 DOMAIN_SIZE = 1.0
-ITERATIONS = 1000
+ITERATIONS = 100
 DELTA_T = 0.001
 PRESSURE_POISSON_ITERATIONS = 50
 STABILITY_SAFETY_FACTOR = 0.5
@@ -147,6 +147,70 @@ def visualization(X, Y, p_next, u_next, v_next):
     plt.ylim((0, 1))
     plt.show()
 
+def validate_with_ghia(X, Y, p, u, v):
+    """Compare simulation results with Ghia et al. (1982) benchmark data"""
+    # Parse Ghia's data for Re=100 (column index 1)
+    ghia_y = []
+    ghia_u = []
+    with open('ghia_u.txt', 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            if line.startswith('#') or not line.strip():
+                continue
+            values = line.strip().split()
+            if len(values) >= 2:
+                ghia_y.append(float(values[0]))
+                ghia_u.append(float(values[1]))  # Re = 100
+    
+    ghia_x = []
+    ghia_v = []
+    with open('ghia_v.txt', 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            if line.startswith('#') or not line.strip():
+                continue
+            values = line.strip().split()
+            if len(values) >= 2:
+                ghia_x.append(float(values[0]))
+                ghia_v.append(float(values[1]))  # Re = 100
+    
+    # Extract centerline velocities
+    # U velocity along vertical centerline (x = 0.5)
+    mid_x_index = np.argmin(np.abs(X[0, :] - 0.5))
+    sim_y = Y[:, mid_x_index]
+    sim_u = u[:, mid_x_index]
+    
+    # V velocity along horizontal centerline (y = 0.5)
+    mid_y_index = np.argmin(np.abs(Y[:, 0] - 0.5))
+    sim_x = X[mid_y_index, :]
+    sim_v = v[mid_y_index, :]
+    
+    # Plot comparisons
+    plt.figure(figsize=(12, 5))
+    
+    # U velocity along vertical centerline
+    plt.subplot(1, 2, 1)
+    plt.plot(sim_u, sim_y, 'b-', label='Simulation')
+    plt.plot(ghia_u, ghia_y, 'ro', label='Ghia et al. (1982)')
+    plt.xlabel('U-velocity')
+    plt.ylabel('Y-coordinate')
+    plt.title('U-velocity along vertical centerline')
+    plt.legend()
+    plt.grid(True)
+    
+    # V velocity along horizontal centerline
+    plt.subplot(1, 2, 2)
+    plt.plot(sim_x, sim_v, 'b-', label='Simulation')
+    plt.plot(ghia_x, ghia_v, 'ro', label='Ghia et al. (1982)')
+    plt.xlabel('X-coordinate')
+    plt.ylabel('V-velocity')
+    plt.title('V-velocity along horizontal centerline')
+    plt.legend()
+    plt.grid(True)
+    
+    plt.tight_layout()
+    plt.show()
+
 def main():
     # Grid
     element_length = DOMAIN_SIZE / (GRID_SIZE - 1)
@@ -188,6 +252,9 @@ def main():
 
     # Visualize
     visualization(X, Y, p_next, u_next, v_next)
+
+    # Compare with Ghia benchmark
+    validate_with_ghia(X, Y, p_next, u_next, v_next)
 
 if __name__ == "__main__":
     main()

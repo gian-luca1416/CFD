@@ -8,7 +8,7 @@ import os
 # Meta information
 GRID_SIZE = 128
 DOMAIN_SIZE = 1.0
-ITERATIONS = 2000
+ITERATIONS = 6000
 DELTA_T = 0.001
 PRESSURE_POISSON_ITERATIONS = 50
 STABILITY_SAFETY_FACTOR = 0.5
@@ -24,13 +24,17 @@ U_TOP = 1.0
 def create_staggered_grid():
     """Create staggered grids for pressure, u-velocity, and v-velocity"""
     # Cell centers for pressure
-    x_p = np.linspace(0.0 + DOMAIN_SIZE/(2*(GRID_SIZE-1)), DOMAIN_SIZE - DOMAIN_SIZE/(2*(GRID_SIZE-1)), GRID_SIZE-1)
-    y_p = np.linspace(0.0 + DOMAIN_SIZE/(2*(GRID_SIZE-1)), DOMAIN_SIZE - DOMAIN_SIZE/(2*(GRID_SIZE-1)), GRID_SIZE-1)
+    # (GRID_SIZE-1) pressure points in each direction
+    half_cell_size = DOMAIN_SIZE / (2 * (GRID_SIZE - 1))
+    x_p = np.linspace(0.0 + half_cell_size, DOMAIN_SIZE - half_cell_size, GRID_SIZE-1)
+    y_p = np.linspace(0.0 + half_cell_size, DOMAIN_SIZE - half_cell_size, GRID_SIZE-1)
     
+    # Cell edges for velocity
     # u-velocity grid (staggered in x-direction)
     x_u = np.linspace(0.0, DOMAIN_SIZE, GRID_SIZE)
     y_u = y_p.copy()
     
+    # Cell edges for velocity
     # v-velocity grid (staggered in y-direction)
     x_v = x_p.copy()
     y_v = np.linspace(0.0, DOMAIN_SIZE, GRID_SIZE)
@@ -83,44 +87,6 @@ def differentiate_p_y(p, element_length):
     result[0, :] = result[1, :]
     result[-1, :] = result[-2, :]
     return result
-
-def laplace_u(u, element_length):
-    """Calculate Laplacian of u on u-grid"""
-    result = np.zeros_like(u)
-    # Interior points
-    for i in range(1, u.shape[0]-1):
-        for j in range(1, u.shape[1]-1):
-            result[i, j] = (
-                u[i, j-1] + u[i-1, j] - 4*u[i, j] + u[i, j+1] + u[i+1, j]
-            ) / (element_length**2)
-    return result
-
-def laplace_v(v, element_length):
-    """Calculate Laplacian of v on v-grid"""
-    result = np.zeros_like(v)
-    # Interior points
-    for i in range(1, v.shape[0]-1):
-        for j in range(1, v.shape[1]-1):
-            result[i, j] = (
-                v[i, j-1] + v[i-1, j] - 4*v[i, j] + v[i, j+1] + v[i+1, j]
-            ) / (element_length**2)
-    return result
-
-def interpolate_u_to_v(u, v):
-    """Interpolate u-velocity to v-points for advection terms"""
-    u_at_v = np.zeros_like(v)
-    for i in range(v.shape[0]):
-        for j in range(1, v.shape[1]-1):
-            u_at_v[i, j] = 0.25 * (u[i, j-1] + u[i, j] + u[max(0, i-1), j-1] + u[max(0, i-1), j])
-    return u_at_v
-
-def interpolate_v_to_u(v, u):
-    """Interpolate v-velocity to u-points for advection terms"""
-    v_at_u = np.zeros_like(u)
-    for i in range(1, u.shape[0]-1):
-        for j in range(u.shape[1]):
-            v_at_u[i, j] = 0.25 * (v[i-1, j] + v[i, j] + v[i-1, max(0, j-1)] + v[i, max(0, j-1)])
-    return v_at_u
 
 def ensure_stability(element_length):
     maximum_possible_time_step_length = (0.5 * element_length**2 / KINEMATIC_VISCOSITY)
@@ -277,26 +243,25 @@ def interpolate_to_visualization_grid(X_p, Y_p, p, u, v):
 def visualization(X_p, Y_p, p, u, v):
     # Interpolate to visualization grid
     X_vis, Y_vis, p_vis, u_vis, v_vis = interpolate_to_visualization_grid(X_p, Y_p, p, u, v)
-    
+
     plt.style.use("dark_background")
     plt.figure(figsize=(8, 8))
-    
-    # Plot velocity vectors and streamlines
-    speed = np.sqrt(u_vis**2 + v_vis**2)
-    plt.contourf(X_vis, Y_vis, speed, cmap="coolwarm", alpha=0.8)
-    plt.colorbar(label='Velocity Magnitude')
-    
-    # Add velocity vectors (at reduced resolution for clarity)
+
+    # Plot pressure field instead of velocity magnitude
+    plt.contourf(X_vis, Y_vis, p_vis, cmap="coolwarm", alpha=0.8)
+    plt.colorbar(label='Pressure')
+
+    # Add velocity vectors (optional)
     skip = 3
     plt.quiver(X_vis[::skip, ::skip], Y_vis[::skip, ::skip], 
                u_vis[::skip, ::skip], v_vis[::skip, ::skip], 
                color="white", scale=5)
-    
-    # Add streamlines
+
+    # Streamlines (optional)
     plt.streamplot(X_vis, Y_vis, u_vis, v_vis, color="cyan", 
-                  density=1.5, linewidth=0.5)
-    
-    plt.title('Lid-Driven Cavity Flow')
+                   density=1.5, linewidth=0.5)
+
+    plt.title('Pressure Field in Lid-Driven Cavity')
     plt.xlabel('x')
     plt.ylabel('y')
     plt.axis('equal')

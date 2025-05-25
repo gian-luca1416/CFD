@@ -1,0 +1,123 @@
+import numpy as np
+import os
+from helpers import FlowVisualizer, BenchmarkValidator
+from solver import FlowSolver
+
+class CavityFlowConfig:
+    """Configuration parameters for the lid-driven cavity simulation."""
+    
+    def __init__(self):
+        self.grid_size = 128
+        self.domain_size = 1.0
+        self.iterations = 6000
+        self.time_step = 0.001
+        self.pressure_iterations = 50
+        self.stability_safety_factor = 0.5
+        self.resume_calculation = False
+        self.kinematic_viscosity = 0.01
+        self.density = 1.0
+        self.top_wall_velocity = 1.0
+
+class StaggeredGrid:
+    """Manages the staggered grid setup for velocity and pressure fields."""
+    
+    def __init__(self, config):
+        self.domain_size = config.domain_size
+        self.grid_size = config.grid_size
+        self.cell_size = self.domain_size / (self.grid_size - 1)
+        
+        # Initialize grid coordinates
+        self._create_grids()
+        
+    def _create_grids(self):
+        """Create staggered grids for pressure and velocity components."""
+        half_cell = self.cell_size / 2
+        pressure_points = np.linspace(half_cell, self.domain_size - half_cell, self.grid_size - 1)
+        velocity_points = np.linspace(0.0, self.domain_size, self.grid_size)
+        
+        # Pressure grid (cell centers)
+        self.X_p, self.Y_p = np.meshgrid(pressure_points, pressure_points)
+        
+        # u-velocity grid (staggered in x-direction)
+        self.X_u, self.Y_u = np.meshgrid(velocity_points, pressure_points)
+        
+        # v-velocity grid (staggered in y-direction)
+        self.X_v, self.Y_v = np.meshgrid(pressure_points, velocity_points)
+
+class FlowField:
+    """Manages the velocity and pressure fields with boundary conditions."""
+    
+    def __init__(self, grid, config):
+        self.grid = grid
+        self.config = config
+        self.u = np.zeros_like(grid.X_u)  # u-velocity
+        self.v = np.zeros_like(grid.X_v)  # v-velocity
+        self.p = np.zeros_like(grid.X_p)  # pressure
+        
+    def apply_boundary_conditions(self):
+        """Apply no-slip and lid-driven boundary conditions."""
+        # u-velocity boundaries
+        self.u[0, :] = 0.0  # Bottom (no-slip)
+        self.u[-1, :] = 2 * self.config.top_wall_velocity - self.u[-2, :]  # Top (lid-driven)
+        self.u[:, 0] = 0.0  # Left (no-slip)
+        self.u[:, -1] = 0.0  # Right (no-slip)
+        
+        # v-velocity boundaries
+        self.v[0, :] = 0.0  # Bottom (no-slip)
+        self.v[-1, :] = 0.0  # Top (no-slip)
+        self.v[:, 0] = 0.0  # Left (no-slip)
+        self.v[:, -1] = 0.0  # Right (no-slip)
+
+class SimulationManager:
+    """Manages the overall simulation workflow."""
+    
+    def __init__(self):
+        self.config = CavityFlowConfig()
+        self.result_file = 'cfd_results.npz'
+        
+    def save_results(self, grid, flow_field):
+        """Save simulation results to file."""
+        np.savez(self.result_file, X_p=grid.X_p, Y_p=grid.Y_p,
+                 u=flow_field.u, v=flow_field.v, p=flow_field.p)
+        print(f"Simulation results saved to {self.result_file}")
+    
+    def load_results(self):
+        """Load simulation results from file."""
+        data = np.load(self.result_file)
+        return data['X_p'], data['Y_p'], data['u'], data['v'], data['p']
+    
+    def run(self):
+        """Execute the simulation workflow."""
+        grid = StaggeredGrid(self.config)
+        flow_field = FlowField(grid, self.config)
+        
+        if os.path.exists(self.result_file) and self.config.resume_calculation:
+            print(f"Resuming calculation from {self.result_file}...")
+            flow_field.X_p, flow_field.Y_p, flow_field.u, flow_field.v, flow_field.p = self.load_results()
+            solver = FlowSolver(self.config, grid, flow_field)
+            print(f"Continuing for {self.config.iterations} more iterations...")
+            solver.run(self.config.iterations)
+            self.save_results(grid, flow_field)
+        
+        elif os.path.exists(self.result_file):
+            print(f"Loading existing results from {self.result_file}")
+            flow_field.X_p, flow_field.Y_p, flow_field.u, flow_field.v, flow_field.p = self.load_results()
+        
+        else:
+            print("Running new simulation...")
+            flow_field.apply_boundary_conditions()
+            solver = FlowSolver(self.config, grid, flow_field)
+            solver.run(self.config.iterations)
+            self.save_results(grid, flow_field)
+        
+        print("Visualizing results...")
+        visualizer = FlowVisualizer(grid, flow_field)
+        visualizer.plot()
+        
+        print("Validating against benchmark data...")
+        validator = BenchmarkValidator(grid, flow_field)
+        validator.validate()
+
+if __name__ == "__main__":
+    sim = SimulationManager()
+    sim.run()

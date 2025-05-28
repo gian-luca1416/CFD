@@ -9,7 +9,7 @@ class CavityFlowConfig:
     def __init__(self):
         self.grid_size = 128
         self.domain_size = 1.0
-        self.iterations = 6000
+        self.iterations = 1000
         self.time_step = 0.001
         self.pressure_iterations = 50
         self.stability_safety_factor = 0.5

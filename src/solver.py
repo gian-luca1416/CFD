@@ -1,5 +1,7 @@
 import numpy as np
 from tqdm import tqdm
+import vtk
+import os
 
 class FlowSolver:
     """Handles the numerical solution of the Navier-Stokes equations."""
@@ -9,6 +11,9 @@ class FlowSolver:
         self.grid = grid
         self.flow_field = flow_field
         self._check_stability()
+        self.vtk_output_dir = "vtk_output"
+        self.vtk_file_counter = 0
+        os.makedirs(self.vtk_output_dir, exist_ok=True)
         
     def _check_stability(self):
         """Ensure time step satisfies stability condition."""
@@ -176,9 +181,66 @@ class FlowSolver:
         
         return dp_dx, dp_dy, p_next
     
+    def _write_vtk(self, iteration, current_time):
+        """Write flow field data to a VTK file."""
+        # Interpolate velocities to pressure grid (cell-centered)
+        u_vis = 0.5 * (self.flow_field.u[:, :-1] + self.flow_field.u[:, 1:])
+        v_vis = 0.5 * (self.flow_field.v[:-1, :] + self.flow_field.v[1:, :])
+        p_vis = self.flow_field.p
+        
+        # Create a VTK rectilinear grid
+        grid = vtk.vtkRectilinearGrid()
+        grid.SetDimensions(self.grid.grid_size - 1, self.grid.grid_size - 1, 1)
+        
+        # Set X and Y coordinates (cell-centered pressure grid)
+        x_coords = vtk.vtkFloatArray()
+        y_coords = vtk.vtkFloatArray()
+        z_coords = vtk.vtkFloatArray()
+        
+        x_points = np.linspace(self.grid.cell_size / 2, self.grid.domain_size - self.grid.cell_size / 2, self.grid.grid_size - 1)
+        y_points = np.linspace(self.grid.cell_size / 2, self.grid.domain_size - self.grid.cell_size / 2, self.grid.grid_size - 1)
+        
+        for x in x_points:
+            x_coords.InsertNextValue(x)
+        for y in y_points:
+            y_coords.InsertNextValue(y)
+        z_coords.InsertNextValue(0.0)  # 2D simulation, single z-plane
+        
+        grid.SetXCoordinates(x_coords)
+        grid.SetYCoordinates(y_coords)
+        grid.SetZCoordinates(z_coords)
+        
+        # Add pressure as cell data
+        pressure_array = vtk.vtkFloatArray()
+        pressure_array.SetName("Pressure")
+        for i in range(self.grid.grid_size - 1):
+            for j in range(self.grid.grid_size - 1):
+                pressure_array.InsertNextValue(p_vis[i, j])
+        grid.GetCellData().AddArray(pressure_array)
+        
+        # Add velocity as point data
+        velocity_array = vtk.vtkFloatArray()
+        velocity_array.SetName("Velocity")
+        velocity_array.SetNumberOfComponents(3)  # 3D vector, z-component is 0
+        for i in range(self.grid.grid_size - 1):
+            for j in range(self.grid.grid_size - 1):
+                velocity_array.InsertNextTuple3(u_vis[i, j], v_vis[i, j], 0.0)
+        grid.GetPointData().AddArray(velocity_array)
+        
+        # Write to file
+        writer = vtk.vtkRectilinearGridWriter()
+        writer.SetFileName(os.path.join(self.vtk_output_dir, f"flow_{self.vtk_file_counter:06d}.vtk"))
+        writer.SetInputData(grid)
+        writer.Write()
+        print(f"Saved VTK file: flow_{self.vtk_file_counter:06d}.vtk at time {current_time:.2f}")
+        self.vtk_file_counter += 1
+
     def run(self, iterations):
         """Run the simulation for specified number of iterations."""
-        for _ in tqdm(range(iterations), desc="Simulation Progress"):
+        output_interval = int(0.1 / self.config.time_step) # or 1
+        current_time = 0.0
+        
+        for i in tqdm(range(iterations), desc="Simulation Progress"):
             u_temp, v_temp = self.compute_intermediate_velocity()
             self.flow_field.apply_boundary_conditions()
             dp_dx, dp_dy, p_next = self.solve_pressure_poisson(u_temp, v_temp)
@@ -186,3 +248,7 @@ class FlowSolver:
             self.flow_field.v = v_temp - self.config.time_step / self.config.density * dp_dy
             self.flow_field.apply_boundary_conditions()
             self.flow_field.p = p_next
+            
+            current_time += self.config.time_step
+            if (i + 1) % output_interval == 0:
+                self._write_vtk(i + 1, current_time)

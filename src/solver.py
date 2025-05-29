@@ -210,11 +210,11 @@ class FlowSolver:
         grid.SetYCoordinates(y_coords)
         grid.SetZCoordinates(z_coords)
         
-        # Add pressure as cell data
+        # Add pressure as cell data 
         pressure_array = vtk.vtkFloatArray()
         pressure_array.SetName("Pressure")
-        for i in range(self.grid.grid_size - 1):
-            for j in range(self.grid.grid_size - 1):
+        for i in range(self.grid.grid_size - 2):
+            for j in range(self.grid.grid_size - 2):
                 pressure_array.InsertNextValue(p_vis[i, j])
         grid.GetCellData().AddArray(pressure_array)
         
@@ -237,7 +237,7 @@ class FlowSolver:
 
     def run(self, iterations):
         """Run the simulation for specified number of iterations."""
-        output_interval = int(0.1 / self.config.time_step) # or 1
+        output_interval = int(1 / self.config.time_step) # eg. 0.1 or 1
         current_time = 0.0
         
         for i in tqdm(range(iterations), desc="Simulation Progress"):
